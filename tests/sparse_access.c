@@ -1,10 +1,13 @@
-#define SIZE 1000000  // Large size
-static int array[SIZE];
+#define ARRAY_SIZE 1000000
+int a[ARRAY_SIZE];
 
-int main() {
-    // Accessing only a few elements at large intervals
-    for (int i = 0; i < SIZE; i += 50000) {  // Adjust the step size as needed
-        array[i] = i;
+int main()
+{
+  for (int i = 0; i < ARRAY_SIZE; i++) {
+    if (i % 10000){
+        a[i] = 30;
     }
-    return 0;
+  }
+  printf("Done\n");
+  return 0;
 }

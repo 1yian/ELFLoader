@@ -16,13 +16,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include <errno.h>
-#include <string.h>
+#define NUM_PAGES_ON_FAULT 1
 
 static void install_segv_handler();
 static void map_page(void * fault_addr);
 static void read_program_header_fault(ElfInfo *info);
+void map_fault_and_next_page(Elf64_Phdr *phdrs, int phnum, void *faulty_addr);
 ElfInfo info;
+
 
 void user_execve(int argc, char* argv[], char* envp[]) {
 
@@ -55,31 +56,43 @@ static void read_program_header_fault(ElfInfo *info){
 	}
 }
 
+bool is_valid_address(uint64_t addr) {
+    for (Elf64_Phdr* phdr = info.program_headers; phdr < info.program_headers + info.elf_hdr.e_phnum; ++phdr) {
+        if (phdr->p_type == PT_LOAD) {
+            uint64_t start = phdr->p_vaddr;
+            uint64_t end = start + phdr->p_memsz;
+
+            if (addr >= start && addr < end) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+
 static void segv_handler(int signo, siginfo_t *sinfo, void *_context) {
-    // Check if the signal is SIGSEGV and the cause is SEGV_MAPERR
     if (signo != SIGSEGV || sinfo->si_code != SEGV_MAPERR) {
-        // If not, reinitialize the signal and return
         goto reinitialize_signal;
     }
 
-    // Extract the address that caused the segmentation fault
     uint64_t faulty_addr = (uint64_t)sinfo->si_addr;
+    // Additional check for valid range (adjust according to your application's memory layout)
+    if (!is_valid_address(faulty_addr)) {
+        goto reinitialize_signal;
+    }
 
-    // Check if the address is valid (non-zero and not in the first page)
     if (faulty_addr && faulty_addr >= PAGE_SIZE) {
-        // Handle the page fault by mapping the required memory
-        map_page(faulty_addr);
+        map_fault_and_next_page(info.program_headers, info.elf_hdr.e_phnum, faulty_addr);
         return;
     }
 
 reinitialize_signal:
-    // Prepare to revert to the default signal action
+    // Consider alternative actions or logging here
     struct sigaction sa;
-    sa.sa_handler = SIG_DFL; // Default signal handler
-    sigemptyset(&sa.sa_mask); // Initialize signal mask
-    sa.sa_flags = 0; // No special flags
-
-    // Reinstall the default action for SIGSEGV
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
     sigaction(SIGSEGV, &sa, NULL);
 }
 
@@ -100,51 +113,82 @@ static void install_segv_handler() {
     sigaction(SIGSEGV, &sa, NULL);
 }
 
-static void map_page(void * faulty_addr) {
-    printf("mapping: %p\n", faulty_addr);
-    int flags = info.elf_hdr.e_type == ET_EXEC ? MAP_PRIVATE | MAP_FIXED_NOREPLACE : MAP_PRIVATE;
+// Function to find the next page address in the same segment
+static void *find_next_page_address(Elf64_Phdr *phdrs, int phnum, void *faulty_addr) {
+    for (int i = 0; i < phnum; i++) {
+        Elf64_Phdr *phdr = &phdrs[i];
+        uint64_t seg_start = phdr->p_vaddr;
+        uint64_t seg_end = seg_start + phdr->p_memsz;
 
-    for (Elf64_Phdr* it = info.program_headers; it != info.program_headers + info.elf_hdr.e_phnum; ++it) {
-        const uint64_t seg_begin = it->p_vaddr,
-              seg_end = it->p_vaddr + it->p_memsz,
-              aligned_begin = MEM_ALIGN(faulty_addr, PAGE_SIZE),
-              bss_begin = it->p_vaddr + it->p_filesz,
-              aligned_end = aligned_begin + PAGE_SIZE;
-
-        const int prot = make_prot(it->p_flags);
-        size_t file_offset = 0;
-        int fd = 0;
-
-        if (seg_begin <= faulty_addr && faulty_addr < seg_end) {
-            if (it->p_memsz > it->p_filesz && bss_begin <= aligned_begin) {
-                // .bss section
-                fd = -1;
-                file_offset = 0;
-                flags |= MAP_ANONYMOUS;
-            } else {
-                fd = info.fd;
-                file_offset = it->p_offset + aligned_begin - it->p_vaddr;
+        if ((uint64_t)faulty_addr >= seg_start && (uint64_t)faulty_addr < seg_end) {
+            uint64_t next_page_start = ((uint64_t)faulty_addr + PAGE_SIZE) & ~(PAGE_SIZE - 1);
+            if (next_page_start < seg_end) {
+                return (void *)next_page_start;
             }
-
-            void *mapped = mmap((void*)aligned_begin, PAGE_SIZE, prot, flags, fd, file_offset);
-            if (mapped == MAP_FAILED) {
-                perror("mmap failed");
-                return; // Exit the function on failure
-            }
-
-            // Zeroing out the memory if necessary
-            if (bss_begin <= aligned_begin) {
-                memset((void*)aligned_begin, 0, PAGE_SIZE);
-            } else {
-                if (aligned_begin < it->p_vaddr) {
-                    memset((void*)aligned_begin, 0, it->p_vaddr - aligned_begin);
-                }
-                if (it->p_filesz < it->p_memsz && bss_begin < aligned_end) {
-                    memset((void*)bss_begin, 0, aligned_end - bss_begin);
-                }
-            }
-
-            break; // Break out of the loop once the mapping is done
+            break;
         }
     }
+    return NULL;
+}
+
+// Function to map the fault address and the next page
+void map_fault_and_next_page(Elf64_Phdr *phdrs, int phnum, void *faulty_addr) {
+    printf("Mapping %p\n", faulty_addr);
+    map_page(faulty_addr); // Map the faulting address
+    void * tmp = faulty_addr;
+
+    for (int i = 0; i < NUM_PAGES_ON_FAULT - 1; i++){
+        void *next_page_addr = find_next_page_address(phdrs, phnum, tmp);
+        if (next_page_addr) {
+            printf("Mapping (next) %p\n", next_page_addr);
+            map_page(next_page_addr); // Map the next page if it exists
+        } else {
+            break;
+        }
+        tmp = next_page_addr;
+    }
+}
+
+static void map_page(void * faulty_addr) {
+	int flags = info.elf_hdr.e_type == ET_EXEC ? MAP_PRIVATE | MAP_FIXED : MAP_PRIVATE;
+
+	for (Elf64_Phdr* it = info.program_headers; it != info.program_headers + info.elf_hdr.e_phnum; ++it) {
+		const uint64_t seg_begin = it->p_vaddr,
+			  seg_end = it->p_vaddr + it->p_memsz,
+			  aligned_begin = MEM_ALIGN(faulty_addr, PAGE_SIZE),
+			  bss_begin = it->p_vaddr + it->p_filesz,
+			  aligned_end = aligned_begin + PAGE_SIZE;
+
+		const int prot = make_prot(it->p_flags);
+		size_t file_offset = 0;
+		int fd = 0;
+
+		if ( seg_begin <= faulty_addr && faulty_addr < seg_end ) {
+			if (it->p_memsz > it->p_filesz && bss_begin <= aligned_begin) {
+				// .bss section
+				fd = -1;
+				file_offset = 0;
+				flags |= MAP_ANONYMOUS;
+			} else {
+				fd = info.fd;
+				file_offset = it->p_offset + aligned_begin - it->p_vaddr;
+			}
+			void * result = mmap((void*)aligned_begin, PAGE_SIZE, prot, flags, fd, file_offset);
+
+
+			if (bss_begin <= aligned_begin) {
+				memset((void*)aligned_begin, 0, PAGE_SIZE);
+			} else {
+
+				if (aligned_begin < it->p_vaddr) {
+					memset((void*)aligned_begin, 0, it->p_vaddr - aligned_begin);
+				}
+				if (it->p_filesz < it->p_memsz && bss_begin < aligned_end) {
+					memset((void*)bss_begin, 0, aligned_end - bss_begin);
+				}
+			}
+
+			break;
+		}
+	}
 }

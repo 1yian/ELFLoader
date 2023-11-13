@@ -1,25 +1,15 @@
-#include <stdio.h>
+#define ARRAY_SIZE 1000000
+int a[ARRAY_SIZE];
 
-#define SIZE 1000//1000000  // Total size of the array
-#define STEP 5//50000    // Step size for sparse access
-#define SEQ_LEN 10   // Length of each sequential access
-
-static int array[SIZE];
-
-int main() {
-    // Sparse sequential access
-    for (int i = 0; i < SIZE; i += STEP) {
-        // Sequential access within a small range
-        for (int j = i; j < i + SEQ_LEN && j < SIZE; j++) {
-            array[j] = j;  // Example operation
+int main()
+{
+  for (int i = 0; i < ARRAY_SIZE; i++) {
+    if (i % 10000){
+        for (int j = i; j < ARRAY_SIZE && j < i + 3000; j++){
+            a[j] = 30;
         }
     }
-
-    // Optional: Print some values to verify (can be commented out)
-    // for (int i = 0; i < SIZE; i += STEP) {
-    //     printf("array[%d] = %d\n", i, array[i]);
-    // }
-    printf("Done\n");
-    return 0;
-
+  }
+  printf("Done\n");
+  return 0;
 }

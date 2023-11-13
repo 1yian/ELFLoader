@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -static
 LDFLAGS = -ldl
 
-all: apager dpager hpager testing libmymalloc.so
+all: apager dpager hpager testing
 
 apager:
 	$(CC) -o apager pagers/apager.c pagers/load.c pagers/main.c
@@ -19,9 +19,6 @@ testing:
 	$(CC) $(CFLAGS) -o tests/sparse_seq_access tests/sparse_seq_access.c
 	$(CC) $(CFLAGS) -o tests/malloc tests/malloc.c
 	$(CC) $(CFLAGS) -o tests/io tests/io.c
-
-libmymalloc.so:
-	$(CC) -fPIC -shared -o libmymalloc.so pagers/mymalloclib.c $(LDFLAGS)
 
 clean:
 	rm -f apager dpager hpager libmymalloc.so
