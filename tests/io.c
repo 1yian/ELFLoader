@@ -2,12 +2,8 @@
 #include <stdlib.h>
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <filename>\n", argv[0]);
-        return 1;
-    }
 
-    const char *filename = argv[1];
+    const char *filename = "test_temp";
     const char *testString = "Hello, this is a test for file I/O operations.";
 
     // Writing to a file
@@ -33,8 +29,6 @@ int main(int argc, char *argv[]) {
         fclose(file);
         return 1;
     }
-
-    printf("Read from file: %s\n", buffer);
     fclose(file);
 
     return 0;

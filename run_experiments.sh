@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Define the pagers and tests
-pagers=("apager" "dpager" "hpager")
-tests=("tests/seq_access" "tests/sparse_access" "tests/sparse_seq_access")
+pagers=("apager" "dpager" "hpager" "hpagermore")
+tests=("tests/single_access" "tests/seq_access" "tests/sparse_access" "tests/sparse_seq_access")
 
 # Create a file to store results
-results_file="experiment_results.txt"
+results_file="results.txt"
 echo "Pager,Test,Trial,Time,Memory" > $results_file
 
 # Function to measure time and memory

@@ -16,7 +16,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define NUM_PAGES_ON_FAULT 1
+#define NUM_PAGES_ON_FAULT 2
 
 static void install_segv_handler();
 static void map_page(void * fault_addr);
@@ -76,7 +76,15 @@ static void segv_handler(int signo, siginfo_t *sinfo, void *_context) {
         goto reinitialize_signal;
     }
 
+
     uint64_t faulty_addr = (uint64_t)sinfo->si_addr;
+    //printf("segfault at %p\n", faulty_addr);
+
+    if (faulty_addr == NULL) {
+        fprintf(stderr, "Segmentation fault: Null pointer dereference\n");
+        exit(SIGSEGV);
+    }
+
     // Additional check for valid range (adjust according to your application's memory layout)
     if (!is_valid_address(faulty_addr)) {
         goto reinitialize_signal;
@@ -90,6 +98,9 @@ static void segv_handler(int signo, siginfo_t *sinfo, void *_context) {
 reinitialize_signal:
     // Consider alternative actions or logging here
     struct sigaction sa;
+
+
+
     sa.sa_handler = SIG_DFL;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
@@ -133,14 +144,14 @@ static void *find_next_page_address(Elf64_Phdr *phdrs, int phnum, void *faulty_a
 
 // Function to map the fault address and the next page
 void map_fault_and_next_page(Elf64_Phdr *phdrs, int phnum, void *faulty_addr) {
-    printf("Mapping %p\n", faulty_addr);
+    //printf("Mapping %p\n", faulty_addr);
     map_page(faulty_addr); // Map the faulting address
     void * tmp = faulty_addr;
 
     for (int i = 0; i < NUM_PAGES_ON_FAULT - 1; i++){
         void *next_page_addr = find_next_page_address(phdrs, phnum, tmp);
         if (next_page_addr) {
-            printf("Mapping (next) %p\n", next_page_addr);
+            //printf("Mapping (next) %p\n", next_page_addr);
             map_page(next_page_addr); // Map the next page if it exists
         } else {
             break;
@@ -150,7 +161,7 @@ void map_fault_and_next_page(Elf64_Phdr *phdrs, int phnum, void *faulty_addr) {
 }
 
 static void map_page(void * faulty_addr) {
-	int flags = info.elf_hdr.e_type == ET_EXEC ? MAP_PRIVATE | MAP_FIXED : MAP_PRIVATE;
+	int flags = info.elf_hdr.e_type == ET_EXEC ? MAP_PRIVATE | MAP_FIXED_NOREPLACE : MAP_PRIVATE;
 
 	for (Elf64_Phdr* it = info.program_headers; it != info.program_headers + info.elf_hdr.e_phnum; ++it) {
 		const uint64_t seg_begin = it->p_vaddr,
@@ -173,6 +184,7 @@ static void map_page(void * faulty_addr) {
 				fd = info.fd;
 				file_offset = it->p_offset + aligned_begin - it->p_vaddr;
 			}
+			//printf("Mmapping from %p to %p\n", aligned_begin, aligned_begin + PAGE_SIZE);
 			void * result = mmap((void*)aligned_begin, PAGE_SIZE, prot, flags, fd, file_offset);
 
 

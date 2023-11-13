@@ -16,7 +16,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define NUM_PAGES_ON_FAULT 3
+#define NUM_PAGES_ON_FAULT 4
 
 static void install_segv_handler();
 static void map_page(void * fault_addr);

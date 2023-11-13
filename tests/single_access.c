@@ -3,8 +3,6 @@ int a[ARRAY_SIZE];
 
 int main()
 {
-  for (int i = 0; i < ARRAY_SIZE; i+=10000) {
-    a[i] = 30;
-  }
+  a[0] = 30;
   return 0;
 }
