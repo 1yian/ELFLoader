@@ -1,7 +1,7 @@
 
 # ELF Loader
 
-This project, developed for a graduate systems class, involves the implementation of a program that loads and executes executables in the user-space.
+This project, developed for my graduate systems class is the implementation of programs that loads and executes executables in the user-space.
 
 ## Motivation
 
